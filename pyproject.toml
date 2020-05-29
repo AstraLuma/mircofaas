@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "microfaas"
+version = "0.1.0"
+description = "The tiniest FaaS"
+authors = ["Jamie Bliss <jamie@ivyleav.es>"]
+license = "AGPL-3.0"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+quart = "^0.12.0"
+hypercorn = {extras = ["uvloop"], version = "^0.9.5"}
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
