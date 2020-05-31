@@ -129,7 +129,8 @@ class UrpServer:
 
 
 async def main()
-    proto = urp.make_stdio_protocol()
+    server = UrpServer()
+    await UrpServer.serve_stdio()
 
 if __name__ == '__main__':
-    loop()
+    asyncio.run(main())
