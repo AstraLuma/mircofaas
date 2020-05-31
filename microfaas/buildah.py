@@ -348,9 +348,6 @@ class Container(metaclass=AsyncInit):
 
         loop = asyncio.get_running_loop()
 
-        code = 'import datetime; print(datetime.datetime.now())'
-        exit_future = asyncio.Future(loop=loop)
-
         # Create the subprocess controlled by DateProtocol;
         # redirect the standard output into a pipe.
         transport, protocol = await loop.subprocess_exec(
