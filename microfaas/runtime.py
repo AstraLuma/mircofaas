@@ -60,7 +60,7 @@ class Runtime:
     async def _starter_task(self, start_event):
         while True:
             try:
-                _, self.client = await self.container.popen_with_protocol(
+                transpo, self.client = await self.container.popen_with_protocol(
                     ClientSubprocessProtocol,
                     ['python', '/__runner__.py'],
                 )
@@ -70,8 +70,8 @@ class Runtime:
                 await self.client.close()
                 raise
             else:
+                LOG.info("Inner process exited rc=%s", transpo.get_returncode())
                 # TODO: Backoff policy
-                ...
 
     async def mk_call(self, func, body, **extra_data):
         async with self.call_lock:
