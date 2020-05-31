@@ -5,6 +5,8 @@ class AsyncInit(type):
     the instance directly.
     """
 
+    # TODO: Handle if __ainit__ is defined but not __init__
+
     async def __call__(cls, *pargs, **kwargs):
         self = super().__call__(*pargs, **kwargs)
         if hasattr(cls, '__ainit__'):

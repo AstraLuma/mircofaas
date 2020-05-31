@@ -7,11 +7,13 @@ import inspect
 
 
 import urp
+import urp.common
 
 try:
     from pkgutil import resolve_name
 except ImportError:
     # Copied from the 3.9 standard library
+    import importlib
     import re
     _DOTTED_WORDS = r'(?!\d)(\w+)(\.(?!\d)(\w+))*'
     _NAME_PATTERN = re.compile(f'^(?P<pkg>{_DOTTED_WORDS})(?P<cln>:(?P<obj>{_DOTTED_WORDS})?)?$', re.U)
@@ -83,13 +85,13 @@ def kwargs_of_func(func):
     Returns ... if a ** is present.
     """
     sig = inspect.signature(func)
-    if any(p.kind == inspect.VAR_KEYWORD for p in sig.parameters):
+    if any(p.kind == p.VAR_KEYWORD for p in sig.parameters.values()):
         return ...
     else:
         return [
             p.name
-            for p in sig.parameters
-            if p.kind in (inspect.KEYWORD_ONLY, inspect.POSITIONAL_OR_KEYWORD)
+            for p in sig.parameters.values()
+            if p.kind in (p.KEYWORD_ONLY, p.POSITIONAL_OR_KEYWORD)
         ]
 
 
@@ -123,14 +125,14 @@ class UrpServer:
         """
         Serve a client connected by stdin/stdout
         """
-        return await connect_stdio(
+        return await urp.common.connect_stdio(
             lambda: urp.server.ServerStreamProtocol(self),
         )
 
 
-async def main()
+async def main():
     server = UrpServer()
-    await UrpServer.serve_stdio()
+    await server.serve_stdio()
 
 if __name__ == '__main__':
     asyncio.run(main())

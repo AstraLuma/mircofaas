@@ -23,9 +23,13 @@ async def _buildah_out(*cmd, **opts):
     """
     opts.setdefault('stdout', subprocess.PIPE)
     proc = await asyncio.create_subprocess_exec(
-        'buildah', *cmd, encoding='utf-8', **opts,
+        'buildah', *cmd, **opts,
     )
     stdout, stderr = await proc.communicate()
+    if stdout is not None:
+        stdout = stdout.decode('utf-8')
+    if stderr is not None:
+        stderr = stderr.decode('utf-8')
     if proc.returncode:
         raise CalledProcessError(
             proc.returncode, ['buildah', *cmd],
@@ -88,6 +92,9 @@ class Container(metaclass=AsyncInit):
 
     def __repr__(self):
         return f'<{type(self).__name__} {self._id}>'
+
+    def __init__(self, image, *, mounts=None):
+        pass
 
     async def __ainit__(self, image, *, mounts=None):
         args = []
@@ -177,6 +184,7 @@ class Container(metaclass=AsyncInit):
         args = self._produce_config_args()
         if args:
             await _buildah_out('config', *args, self._id)
+            self._snapshot_config()
 
     async def __aenter__(self):
         return self
@@ -207,7 +215,7 @@ class Container(metaclass=AsyncInit):
         """
         stdout = await _buildah_out('mount', self._id)
         path = stdout.strip()
-        yield pathlib.PurePath(path)
+        yield pathlib.Path(path)
         await _buildah_out('umount', self._id)
 
     async def copy_in(self, src, dst):
@@ -273,17 +281,16 @@ class Container(metaclass=AsyncInit):
         user=None, volumes=None, mounts=None, terminal=False,
         # TODO: cap add/drop, hostname, ipc, isolation, network, pid, uts
         # Subprocess flags
-        stdin=None, input=None, stdout=None, stderr=None, text=None,
+        stdin=None, stdout=None, stderr=None, text=None,
         # TODO: cwd, env
     ):
         """
         Runs a command, returning stdout
         """
-        self._commit_config()
+        await self._commit_config()
         args = self._run_args(user, volumes, mounts, terminal)
         opts = {
             'stdin': stdin,
-            'input': input,
             'stdout': stdout,
             'stderr': stderr,
             'text': text,
@@ -291,7 +298,7 @@ class Container(metaclass=AsyncInit):
 
         return await _buildah_out(
             'run', *args, '--', self._id, *cmd,
-            encoding='utf-8', **opts,
+            **opts,
         )
 
 
@@ -301,17 +308,16 @@ class Container(metaclass=AsyncInit):
         user=None, volumes=None, mounts=None, terminal=False,
         # TODO: cap add/drop, hostname, ipc, isolation, network, pid, uts
         # Subprocess flags
-        stdin=None, input=None, stdout=None, stderr=None, text=None,
+        stdin=None, stdout=None, stderr=None, text=None,
         # TODO: cwd, env
     ):
         """
         Runs a command, returning the Process
         """
-        self._commit_config()
+        await self._commit_config()
         args = self._run_args(user, volumes, mounts, terminal)
         opts = {
             'stdin': stdin,
-            'input': input,
             'stdout': stdout,
             'stderr': stderr,
             'text': text,
@@ -319,7 +325,7 @@ class Container(metaclass=AsyncInit):
 
         return await asyncio.create_subprocess_exec(
             'buildah', 'run', *args, '--', self._id, *cmd,
-            encoding='utf-8', **opts,
+            **opts,
         )
 
 
@@ -337,7 +343,7 @@ class Container(metaclass=AsyncInit):
 
         Returns (transport, protocol)
         """
-        self._commit_config()
+        await self._commit_config()
         args = self._run_args(user, volumes, mounts, terminal)
 
         loop = asyncio.get_running_loop()
@@ -362,6 +368,9 @@ class ImageNotFoundError(Exception):
 
 class Image(metaclass=AsyncInit):
     _id: str
+
+    def __init__(self, ident):
+        pass
 
     async def __ainit__(self, ident):
         """
@@ -422,7 +431,8 @@ class Image(metaclass=AsyncInit):
         stdout = await _buildah_out(*cmd)
 
         # TODO: Add a way to get the Image from each item
-        yield from json.loads(stdout)
+        for img in json.loads(stdout):
+            yield img
 
     @classmethod
     async def _resolve(cls, id):

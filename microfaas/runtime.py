@@ -1,12 +1,12 @@
 """
 Manages the environment that runs bundles.
 """
-import zipfile
+import asyncio
 import importlib.resources
 import logging
+import zipfile
 
-from urp import Disconnected
-from urp.client import ClientSubprocessProtocol
+from urp.client import ClientSubprocessProtocol, Disconnected
 
 from .buildah import Container
 
@@ -23,32 +23,33 @@ class Runtime:
         self.call_lock = asyncio.Lock()
 
     async def __aenter__(self):
-        loop = asyncio.get_running_loop()
-
-        self.container = self._setup_container()
+        self.container = await self._setup_container()
         self.client = None
         start_event = asyncio.Event()
         self.task = asyncio.create_task(self._starter_task(start_event))
         await start_event.wait()
+        return self
 
     async def __aexit__(self, *exc):
         self.task.cancel()
-        self.container.__aexit__(None, None, None)
+        await self.container.__aexit__(*exc)
 
     async def _setup_container(self):
+        loop = asyncio.get_running_loop()
+
         cont = await Container('python:3')
         # TODO: Data volume
         await cont.__aenter__()
         try:
             async with cont.mount() as root:
-                (root / 'app').mkdir()
+                await loop.run_in_executor(None, (root / 'app').mkdir)
                 await loop.run_in_executor(None, self.zipsource.extractall, root)
 
             cont.workdir = '/app'
 
-            await cont.run('pip', 'install', 'urp', stdout=None)
+            await cont.run(['pip', 'install', 'unnamed-rpc'], stdout=None)
 
-            with importlib.resources.path('microfass', '__runner__.py') as src:
+            with importlib.resources.path('microfaas', '__runner__.py') as src:
                 await cont.copy_in(src, '/__runner__.py')
         except:
             await cont.__aexit__(None, None, None)
@@ -61,7 +62,7 @@ class Runtime:
             try:
                 _, self.client = await self.container.popen_with_protocol(
                     ClientSubprocessProtocol,
-                    'python', '/__runner__.py'
+                    ['python', '/__runner__.py'],
                 )
                 start_event.set()
                 await self.client.finished()
@@ -76,8 +77,9 @@ class Runtime:
         async with self.call_lock:
             while True:
                 try:
-                    async for _ in self.client[func](_=body, **extra_data):
-                        pass
+                    async for resp in self.client[func](_=body, **extra_data):
+                        if isinstance(resp, Exception):
+                            LOG.error("Received error: %s", resp)
                 except Exception:
                     LOG.exception("Error calling %s", func)
                     # Try again after yielding
