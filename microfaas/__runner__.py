@@ -4,7 +4,7 @@ Runner for inside the container
 import asyncio
 import functools
 import inspect
-
+import sys
 
 import urp
 import urp.common
@@ -113,11 +113,15 @@ class UrpServer:
                 }
 
             # Actually call the function
-            if inspect.iscoroutinefunction(func):
-                return await func(body, **args)
-            else:
-                loop = asyncio.get_running_loop()
-                return await loop.run_in_executor(None, functools.partial(func, body, **args))
+            try:
+                if inspect.iscoroutinefunction(func):
+                    return await func(body, **args)
+                else:
+                    loop = asyncio.get_running_loop()
+                    return await loop.run_in_executor(None, functools.partial(func, body, **args))
+            finally:
+                sys.stdout.flush()  # Dunno why line flushing isn't working
+                sys.stderr.flush()
 
         return _
 
@@ -125,9 +129,10 @@ class UrpServer:
         """
         Serve a client connected by stdin/stdout
         """
-        return await urp.common.connect_stdio(
+        transpo, proto = await urp.common.connect_stdio(
             lambda: urp.server.ServerStreamProtocol(self),
         )
+        await proto.finished()
 
 
 async def main():
