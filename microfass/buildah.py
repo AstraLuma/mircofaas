@@ -21,8 +21,9 @@ async def _buildah_out(*cmd, **opts):
 
     Returns a str of the stdout or raises a CalledProcessError.
     """
+    opts.setdefault('stdout', subprocess.PIPE)
     proc = await asyncio.create_subprocess_exec(
-        'buildah', *cmd, encoding='utf-8', stdout=subprocess.PIPE, **opts,
+        'buildah', *cmd, encoding='utf-8', **opts,
     )
     stdout, stderr = await proc.communicate()
     if proc.returncode:
@@ -228,21 +229,20 @@ class Container(metaclass=AsyncInit):
         dst must include the name that will be taken, not just the parent
         directory.
         """
-        dst = pathlib.PurePath(dst)
+        loop = asyncio.get_running_loop()
+        dst = pathlib.Path(dst)
         # Cleanup what already exists
         if dst.is_dir():
-            # FIXME
-            shutil.rmtree(dst)
+            await loop.run_in_executor(None, shutil.rmtree, dst)
         elif dst.exists():
-            dst.unlink()
+            await loop.run_in_executor(None, dst.unlink)
 
         async with self.mount() as root:
             fullsrc = root / src.lstrip('/')
-            # FIXME
-            if fullsrc.is_dir():
-                shutil.copytree(fullsrc, dst)
+            if await loop.run_in_executor(None, fullsrc.is_dir):
+                await loop.run_in_executor(None, shutil.copytree, fullsrc, dst)
             else:
-                shutil.copy2(fullsrc, dst)
+                await loop.run_in_executor(None, shutil.copy2, fullsrc, dst)
 
     def _run_args(self, user, volumes, mounts, terminal):
         args = []
