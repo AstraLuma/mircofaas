@@ -32,6 +32,12 @@ class Runtime:
 
     async def __aexit__(self, *exc):
         self.task.cancel()
+        try:
+            await self.task  # Wait for the task to acetually finish
+        except CancelledError:
+            pass
+        except Exception:
+            LOG.exception("Error cleaning up runtime")
         await self.container.__aexit__(*exc)
 
     async def _setup_container(self):
@@ -67,13 +73,14 @@ class Runtime:
                 start_event.set()
                 await self.client.finished()
             except:
-                await self.client.close()
+                await self.client.close()  # Tell the process to exit
+                await self.client.finished()  # Actually wait for the process to exit
                 raise
             else:
                 LOG.info("Inner process exited rc=%s", transpo.get_returncode())
                 # TODO: Backoff policy
 
-    async def mk_call(self, func, body, **extra_data):
+    async def do_call(self, func, body, **extra_data):
         async with self.call_lock:
             while True:
                 try:
