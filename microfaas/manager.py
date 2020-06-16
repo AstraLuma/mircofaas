@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import dataclasses
+import logging
 import typing
 
 from .runtime import Runtime
@@ -14,7 +15,7 @@ class Bundle:
     Holds a bunch of live objects the manager has to keep track of.
     """
     #: The source bundle, can be filename, path-like, or file-like
-    bundle: typing.Any
+    # bundle: typing.Any
     #: The current runtime
     runtime: Runtime
     #: The call queue
@@ -46,7 +47,7 @@ class Manager:
         for task in asyncio.as_completed(tasks):
             try:
                 await task
-            except CancelledError:
+            except asyncio.CancelledError:
                 pass
             except Exception:
                 LOG.exception("Error stopping task %r", task)
@@ -59,12 +60,25 @@ class Manager:
 
     async def join(self):
         """
-        Block until all the queues are empty
+        Block until all the queues are empty.
+
+        Note that this does not prevent adding new jobs or any such.
         """
-        for _ in asyncio.as_completed([bdata.queue.join() for bdata in self.bundles.values()]):
-            pass
+        await asyncio.gather(*(bdata.queue.join() for bdata in self.bundles.values()))
 
     async def deploy(self, name, bundle):
+        """
+        Deploy a new bundle at name.
+
+        When this function returns, the bundle will be fully deployed and
+        operating.
+
+        If name didn't previously exist, new queues, containers, etc will be
+        created.
+
+        If name did exist, only the container will be replaced. Any unprocessed
+        items in the queue will be handled by the new deployment.
+        """
         old_runtime = None
         if name in self.bundles:
             # Replacement deploy
@@ -85,16 +99,16 @@ class Manager:
         else:
             # New deploy
             bdata = Bundle(
-                bundle=bundle,
-                queue=queue,
-                runtime=Runtime(bundle)
+                # bundle=bundle,
+                queue=asyncio.Queue(),
+                runtime=Runtime(bundle),
+                task=None,  # Later
             )
             # Prepare container
             await bdata.runtime.__aenter__()
             self.bundles[name] = bdata
             # Start queue consumer
             bdata.task = asyncio.create_task(self._loop_on_jobs(name), name=f"{bundle}-queue-processor")
-
 
     async def _loop_on_jobs(self, bundle_name):
         """
@@ -140,13 +154,42 @@ class Manager:
         bdata.task.cancel()
         try:
             await bdata.task
-        except CancelledError:
+        except asyncio.CancelledError:
             pass
         except Exception:
             LOG.exception("Error stopping task %r for bundle %s", task, name)
 
         # Clean up the container
         try:
-            await bdata.runtime.__aexit__(*exc)
+            await bdata.runtime.__aexit__(None, None, None)
         except Exception:
             LOG.exception("Error cleaning up runtime for  %s", name)
+
+    async def call_func(self, bundle_name, function, body, **extras):
+        """
+        Calls the given function inside the given bundle with the body and extra
+        data.
+
+        This is enqueued, not immediate.
+
+        function is in the form of pkgutil.resolve_name(): Either
+        pkg.module.function or pkg.module:function.
+        """
+        try:
+            bdata = self.bundles[bundle_name]
+        except KeyError as exc:
+            raise ValueError(f"Unable to find bundle {bundle_name}") from exc
+
+        await bdata.queue.put((function, body, extras))
+
+    def __iter__(self):
+        """
+        Get the names of all currently-running bundles.
+
+        To be clear:
+        * New bundles being deployed but not ready: Not included
+        * Bundles that are being replaced: Included
+        * Bundles that are operating normally: Included
+        * Bundles that are being cleaned up after deletion: Not included
+        """
+        yield from self.bundles.keys()

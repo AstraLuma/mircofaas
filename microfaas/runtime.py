@@ -34,7 +34,7 @@ class Runtime:
         self.task.cancel()
         try:
             await self.task  # Wait for the task to acetually finish
-        except CancelledError:
+        except asyncio.CancelledError:
             pass
         except Exception:
             LOG.exception("Error cleaning up runtime")
