@@ -6,14 +6,17 @@ from asyncio import subprocess
 import contextlib
 import copy
 import json
+import logging
 import pathlib
 import shutil
 from subprocess import CalledProcessError
 import urllib.request
 import typing
 
-
 from .utils import AsyncInit
+
+LOG = logging.getLogger(__name__)
+
 
 async def _buildah_out(*cmd, **opts):
     """
@@ -22,6 +25,7 @@ async def _buildah_out(*cmd, **opts):
     Returns a str of the stdout or raises a CalledProcessError.
     """
     opts.setdefault('stdout', subprocess.PIPE)
+    LOG.debug("Run %s", ['buildah', *cmd])
     proc = await asyncio.create_subprocess_exec(
         'buildah', *cmd, **opts,
     )
@@ -323,10 +327,11 @@ class Container(metaclass=AsyncInit):
             'text': text,
         }
 
-        return await asyncio.create_subprocess_exec(
-            'buildah', 'run', *args, '--', self._id, *cmd,
-            **opts,
-        )
+        fullcmd = ['buildah', 'run', *args, '--', self._id, *cmd]
+
+        LOG.debug("Run %s", fullcmd)
+
+        return await asyncio.create_subprocess_exec(*fullcmd, **opts)
 
 
     async def popen_with_protocol(
@@ -350,6 +355,10 @@ class Container(metaclass=AsyncInit):
 
         # Create the subprocess controlled by DateProtocol;
         # redirect the standard output into a pipe.
+        fullcmd = ['buildah', 'run', *args, '--', self._id, *cmd]
+
+        LOG.debug("Run %s (with protocol %r)", fullcmd, protocol)
+
         transport, protocol = await loop.subprocess_exec(
             protocol,
             'buildah', 'run', *args, '--', self._id, *cmd,

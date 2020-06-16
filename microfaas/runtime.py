@@ -26,7 +26,7 @@ class Runtime:
         self.container = await self._setup_container()
         self.client = None
         start_event = asyncio.Event()
-        self.task = asyncio.create_task(self._starter_task(start_event))
+        self.task = asyncio.create_task(self._starter_task(start_event), name=f"starter-{self.zipsource!r}")
         await start_event.wait()
         return self
 

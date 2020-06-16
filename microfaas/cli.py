@@ -13,12 +13,7 @@ from . import app
 def cli():
     """CLI Interface to microfaas"""
 
-
-@cli.command('serve')
-def serve():
-    """
-    Serve the application
-    """
+def _run_hypercorn(**additional_config):
     # Handle trampolining into buildah unshare
     if '_CONTAINERS_USERNS_CONFIGURED' in os.environ:
         # We're inside buildah, start hypercorn
@@ -27,7 +22,25 @@ def serve():
         import microfaas.hypercorn_config
         config = hypercorn.Config.from_object(microfaas.hypercorn_config)
 
+        for k, v in additional_config.items():
+            setattr(config, k, v)
+
         asyncio.run(hypercorn.asyncio.serve(app, config))
     else:
         # Trampoline into buildah
         os.execvp('buildah', ['buildah', 'unshare', *sys.argv])
+
+@cli.command()
+def serve():
+    """
+    Serve the application
+    """
+    _run_hypercorn()
+
+
+@cli.command()
+def dev():
+    """
+    Serve the application (debug config)
+    """
+    _run_hypercorn(use_reloader=True)
