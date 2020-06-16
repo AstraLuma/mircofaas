@@ -41,6 +41,8 @@ class Manager:
         # Stop all queue processing tasks
         tasks = []
         for bdata in self.bundles.values():
+            if bdata.task is None:
+                continue
             tasks.append(bdata.task)
             bdata.task.cancel()
         # Wait for the tasks to actually exit
@@ -98,7 +100,7 @@ class Manager:
                 LOG.exception("Error cleaning up old runtime of %s", name)
         else:
             # New deploy
-            bdata = Bundle(
+            bdata = self.bundles[name] = Bundle(
                 # bundle=bundle,
                 queue=asyncio.Queue(),
                 runtime=Runtime(bundle),
@@ -106,7 +108,6 @@ class Manager:
             )
             # Prepare container
             await bdata.runtime.__aenter__()
-            self.bundles[name] = bdata
             # Start queue consumer
             bdata.task = asyncio.create_task(self._loop_on_jobs(name), name=f"{bundle}-queue-processor")
 
